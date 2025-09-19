@@ -2,194 +2,190 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Emily's Cat</title>
+  <title>Emily’s Cat</title>
   <style>
-    /* page */
-    html, body { height: 100%; margin: 0; }
+    html, body { height:100%; margin:0; }
     body{
-      background:#ffffff;              /* white bg */
-      display:flex; flex-direction:column;
-      align-items:center; justify-content:center;
-      gap: 28px;
+      background:#ffffff;               /* white background */
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:24px;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
     }
 
-    /* canvas */
-    canvas{
-      width:256px; height:256px;       /* 256×256 on screen */
-      image-rendering: pixelated;      /* crisp */
+    /* canvas box */
+    .stage{
+      width:256px; height:256px;        /* 4× scale of 64px frames */
+      border:1px solid #ddd;
+      display:grid; place-items:center;
       background:#fff;
-      border: 1px solid #ddd;
+    }
+    canvas{
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      width:256px; height:256px;        /* upscale the 64×64 drawing */
+      background:#fff;
     }
 
     /* buttons row */
-    .button-row{
-      display:flex; gap: 28px; justify-content:center; align-items:center;
+    .buttons{
+      display:flex; gap:28px;
     }
-    .button{
-      display:flex; align-items:center; gap:12px;
-      padding:14px 22px; font-size:20px; font-weight:600;
-      border:2px solid #333; border-radius:10px; background:#fff;
-      cursor:pointer; user-select:none;
-      transition: transform .05s ease, background .1s ease;
+    .buttons button{
+      display:flex; align-items:center; gap:14px;
+      padding:18px 24px;
+      font-size:22px;
+      border-radius:10px;
+      border:2px solid #333;
+      background:#fff;
+      cursor:pointer;
+      box-shadow:0 1px 0 #999 inset;
+      transition: transform .05s ease;
     }
-    .button:hover{ background:#f2f2f2; }
-    .button:active{ transform: translateY(1px); }
-    .button img{ width:28px; height:28px; image-rendering: pixelated; }
+    .buttons button:active{ transform: translateY(1px); }
+
+    .buttons img{
+      width:32px; height:32px;          /* small pixel icon */
+      image-rendering: pixelated;
+    }
+
+    /* tiny helper text (optional) */
+    .hint{ color:#999; font-size:12px; }
   </style>
 </head>
 <body>
 
-  <!-- Game View -->
-  <canvas id="game" width="256" height="256"></canvas>
+  <div class="stage">
+    <canvas id="game" width="64" height="64"></canvas>
+  </div>
 
-  <!-- Controls -->
-  <div class="button-row">
-    <div id="btnKimchi" class="button">
-      <img src="Kimchi.png" alt="Kimchi" />
+  <div class="buttons">
+    <button id="btnKimchi">
+      <img src="Kimchi.png" alt="Kimchi">
       Kimchi
-    </div>
-    <div id="btnVodka" class="button">
-      <img src="vodka.png" alt="Vodka" />
+    </button>
+    <button id="btnVodka">
+      <img src="vodka.png" alt="Vodka">
       Vodka
-    </div>
+    </button>
   </div>
 
   <script>
-    // ====== constants ======
-    const FRAME_W = 64;        // size of each frame in your sheets
+    /* --------- constants --------- */
+    const FRAME_W = 64;
     const FRAME_H = 64;
-    const FPS = 8;             // animation speed
-    const SCALE = 4;           // 64px * 4 = 256px canvas
+    const FPS = 8;                       // animation speed
 
-    // ====== canvas setup ======
-    const canvas = document.getElementById('game');
-    const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = false;
-
-    // center position to draw the 64×64 sprite on a 256×256 canvas
-    const drawX = (canvas.width  - FRAME_W * SCALE) / 2;
-    const drawY = (canvas.height - FRAME_H * SCALE) / 2;
-
-    // ====== state machine ======
-    // files must match your repo EXACTLY (case sensitive)
-    const sheets = {
-      idle: {
-        normal: 'Normalidle.png',
-        sick:   'sickidle2.png',
-      },
-      kimchi: {
-        normal: 'normalkimchinormal.png',   // normal → eat kimchi → stay normal
-        sick:   'sickkimchinormal.png',     // sick → eat kimchi → heal to normal
-      },
-      vodka: {
-        normal: 'normalvodkasick.png',      // normal → drink → become sick
-        sick:   'sickvodkasick.png',        // sick → drink → stay sick
-      },
+    /* --------- spritesheets (from your repo) --------- */
+    const SHEETS = {
+      idleNormal:       'Normalidle.png',
+      idleSick:         'sickidle2.png',
+      kimchi_normal:    'normalkimchinormal.png',
+      kimchi_sickHeal:  'sickkimchinormal.png',
+      vodka_normalSick: 'normalvodkasick.png',
+      vodka_sickStay:   'sickvodkasick.png'
     };
 
-    let mood = 'normal'; // 'normal' | 'sick'
-    let playing = null;  // current animation controller (for cancel)
+    /* --------- state --------- */
+    let isSick = false;                  // default normal
+    let playingOnce = false;
 
-    // generic sprite-sheet player (single row, any frame count)
-    function playSheet(src, { loop=false, onComplete=null } = {}){
-      // stop previous animation if any
-      if (playing && playing.stop) playing.stop();
+    /* --------- canvas --------- */
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    /* scale drawing cleanly (we upscale via CSS, but keep nearest-neighbor) */
+    ctx.imageSmoothingEnabled = false;
+
+    /* --------- generic animation player --------- */
+    const state = {
+      img: null,
+      frame: 0,
+      framesTotal: 1,
+      tick: 0,
+      ticksPerFrame: Math.max(1, Math.round(60 / FPS)),  // 60fps requestAnimationFrame pacing
+      onDone: null
+    };
+
+    function loadAndPlay(src, playOnce=false, after=null){
+      playingOnce = playOnce;
+      state.onDone = after || null;
 
       const img = new Image();
-      const state = {
-        frame: 0,
-        total: 1,
-        tick: 0,
-        stopped: false
-      };
-
       img.onload = () => {
-        // auto-detect frame count from image width
-        state.total = Math.max(1, Math.floor(img.width / FRAME_W));
-
-        const step = () => {
-          if (state.stopped) return;
-
-          // draw current frame
-          const sx = state.frame * FRAME_W;
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(
-            img,
-            sx, 0, FRAME_W, FRAME_H,      // crop
-            drawX, drawY, FRAME_W*SCALE, FRAME_H*SCALE // draw scaled & centered
-          );
-
-          // advance at FPS
-          state.tick++;
-          if (state.tick >= Math.max(1, Math.round(60 / FPS))) {
-            state.tick = 0;
-            state.frame++;
-            if (state.frame >= state.total) {
-              if (loop) {
-                state.frame = 0;
-              } else {
-                // finish once, then callback
-                if (onComplete) onComplete();
-                return; // stop requesting new frames
-              }
-            }
-          }
-          state.raf = requestAnimationFrame(step);
-        };
-
-        step();
+        state.img = img;
+        state.frame = 0;
+        state.tick = 0;
+        // auto-detect number of frames by width / 64
+        state.framesTotal = Math.max(1, Math.floor(img.width / FRAME_W));
+        requestAnimationFrame(loop);
       };
-
       img.src = src;
-
-      // allow external stop
-      playing = {
-        stop(){
-          state.stopped = true;
-          if (state.raf) cancelAnimationFrame(state.raf);
-        }
-      };
     }
 
-    // helpers to switch to idle based on mood
+    function loop(){
+      // advance timing
+      state.tick++;
+      if (state.tick >= state.ticksPerFrame){
+        state.tick = 0;
+        state.frame++;
+        if (state.frame >= state.framesTotal){
+          if (playingOnce){
+            // finish one-shot animation
+            if (typeof state.onDone === 'function') state.onDone();
+            return; // stop drawing until something else plays
+          }
+          state.frame = 0; // loop idle
+        }
+      }
+
+      // draw current frame centered
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const sx = state.frame * FRAME_W;
+      ctx.drawImage(state.img, sx, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
+
+      requestAnimationFrame(loop);
+    }
+
+    /* --------- higher-level helpers --------- */
     function playIdle(){
-      playSheet(sheets.idle[mood], { loop:true });
+      loadAndPlay(isSick ? SHEETS.idleSick : SHEETS.idleNormal, false);
     }
 
-    // button actions
     function doKimchi(){
-      // choose sheet by current mood
-      const src = sheets.kimchi[mood];
-      playSheet(src, {
-        loop:false,
-        onComplete(){
-          // kimchi always ends in normal mood
-          mood = 'normal';
+      if (isSick){
+        // sick -> heal
+        loadAndPlay(SHEETS.kimchi_sickHeal, true, () => {
+          isSick = false;
           playIdle();
-        }
-      });
+        });
+      } else {
+        // normal -> just eat, stay normal
+        loadAndPlay(SHEETS.kimchi_normal, true, playIdle);
+      }
     }
 
     function doVodka(){
-      const src = sheets.vodka[mood];
-      playSheet(src, {
-        loop:false,
-        onComplete(){
-          // vodka ends in sick mood
-          mood = 'sick';
+      if (isSick){
+        // sick -> drink, stay sick
+        loadAndPlay(SHEETS.vodka_sickStay, true, playIdle);
+      } else {
+        // normal -> drink, become sick
+        loadAndPlay(SHEETS.vodka_normalSick, true, () => {
+          isSick = true;
           playIdle();
-        }
-      });
+        });
+      }
     }
 
-    // attach buttons
+    /* --------- wire up buttons --------- */
     document.getElementById('btnKimchi').addEventListener('click', doKimchi);
     document.getElementById('btnVodka').addEventListener('click', doVodka);
 
-    // boot: default normal idle looping
+    /* --------- boot --------- */
     playIdle();
   </script>
 </body>
 </html>
-  
