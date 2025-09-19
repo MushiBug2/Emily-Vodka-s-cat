@@ -6,194 +6,204 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
-      --page-bg: #ffffff;     /* white background */
-      --canvas-size: 256px;   /* display size (scaled up) */
-      --icon-kimchi: 72px;    /* kimchi icon size */
-      --icon-vodka: 128px;    /* vodka icon size (bigger) */
-      --gap: 24px;
-      --text: #222;
+      --canvas-size: 640px;   /* 64px frame * 10x scale */
+      --gap: 28px;
+      --btn-icon: 48px;
+      --btn-font: 36px;
     }
-    html,body{ height:100%; margin:0; }
+
+    html, body { height: 100%; margin: 0; }
     body{
-      background: var(--page-bg);
-      color: var(--text);
-      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      background: #ffffff;
+      color:#222;
+      display: grid;
+      place-items: center;
       gap: var(--gap);
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
     }
 
-    /* Canvas box (no border) */
-    .stage{
+    /* Center stack: canvas then buttons */
+    .stage{ display:grid; place-items:center; gap: var(--gap); }
+
+    /* Pixel-perfect canvas, no border */
+    canvas{
       width: var(--canvas-size);
       height: var(--canvas-size);
-      display:grid; place-items:center;
-    }
-    canvas{
-      width: 100%; height: 100%;
       image-rendering: pixelated;
-      image-rendering: crisp-edges;
-      background: transparent;
-      display:block;
+      background: #fff;
     }
 
     /* Button row */
-    .buttons{ display:flex; align-items:center; gap: 32px; }
-    .btn{
-      border: none;
-      background: transparent;
-      display:flex; align-items:center; gap: 12px;
-      cursor: pointer;
-      font-size: 28px; font-weight: 700; color: var(--text);
-      padding: 6px 10px;
+    .buttons{
+      display:flex;
+      gap: 56px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
     }
-    .btn:active{ transform: translateY(1px); }
-    .btn img{ image-rendering: pixelated; display:block; height:auto; }
-    #imgKimchi{ width: var(--icon-kimchi); }
-    #imgVodka { width: var(--icon-vodka); }
+
+    /* Minimal buttons (no boxes) */
+    .btn{
+      display:inline-flex;
+      align-items:center;
+      gap:14px;
+      background: transparent;
+      border: none;
+      padding: 6px 8px;
+      cursor: pointer;
+      font-size: var(--btn-font);
+      line-height: 1;
+      user-select: none;
+    }
+    .btn:active { transform: translateY(1px); }
+
+    .btn img{
+      width: var(--btn-icon);
+      height: var(--btn-icon);
+      image-rendering: pixelated;
+      display:block;
+    }
   </style>
 </head>
 <body>
 
-  <!-- Stage -->
   <div class="stage">
-    <canvas id="game" width="256" height="256"></canvas>
-  </div>
+    <canvas id="game" width="640" height="640"></canvas>
 
-  <!-- Buttons -->
-  <div class="buttons">
-    <button class="btn" id="btnKimchi" title="Feed kimchi">
-      <img id="imgKimchi" src="KImchi.png?v=1" alt="Kimchi">
-      Kimchi
-    </button>
+    <div class="buttons">
+      <button id="btnKimchi" class="btn" title="Feed Kimchi">
+        <img src="KImchi.png" alt="Kimchi" />
+        Kimchi
+      </button>
 
-    <button class="btn" id="btnVodka" title="Give vodka">
-      <img id="imgVodka" src="vodka.png?v=1" alt="Vodka">
-      Vodka
-    </button>
+      <button id="btnVodka" class="btn" title="Drink Vodka">
+        <img src="vodka.png" alt="Vodka" />
+        Vodka
+      </button>
+    </div>
   </div>
 
   <script>
     // ---------- CONFIG ----------
-    const FRAME_W = 64;           // each frame width
-    const FRAME_H = 64;           // each frame height
-    const FPS      = 3;           // slower = 3 fps (tweak)
-    const CENTER_X = 96;          // where to draw the cat (top-left of frame)
-    const CENTER_Y = 96;          // adjust to taste
+    const FRAME_W = 64;        // each frame width (your sprites)
+    const FRAME_H = 64;        // each frame height
+    const SCALE   = 10;        // 10x bigger
+    const FPS     = 6;         // animation speed
 
-    // Sprite sheets (EDIT FILENAMES + frame counts to your exact files)
+    // File names you uploaded (case-sensitive!)
     const SHEETS = {
-      idle:     { src: 'Normalidle.png?v=2',         frames: 4 }, // default loop
-      kimchi:   { src: 'normalkimchinormal.png?v=2', frames: 6 }, // eat once
-      vodka:    { src: 'normalvodkasick.png?v=2',    frames: 6 }, // drink once
-      sickIdle: { src: 'sixkidle2.png?v=2',          frames: 4 }  // sick loop
+      idleNormal : 'Normalidle.png',
+      kimchiOnce : 'normalkimchinormal.png',
+      vodkaOnce  : 'normalvodkasick.png',
+      idleSick   : 'sixkidle2.png'
     };
 
-    // ---------- SETUP ----------
+    // ---------- RENDER SETUP ----------
     const canvas = document.getElementById('game');
-    const ctx = canvas.getContext('2d');
+    const ctx    = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
 
-    let isSick = false;
+    // draw centered helper
+    function drawFrame(img, frameIndex){
+      const sx = frameIndex * FRAME_W;
+      const sy = 0;
+      const dw = FRAME_W * SCALE;
+      const dh = FRAME_H * SCALE;
+      const dx = Math.floor((canvas.width  - dw) / 2);
+      const dy = Math.floor((canvas.height - dh) / 2);
 
-    // state for current animation
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(img, sx, sy, FRAME_W, FRAME_H, dx, dy, dw, dh);
+    }
+
+    // ---------- ANIMATION CORE ----------
     let current = {
-      img: new Image(),
-      sheet: SHEETS.idle,
+      img: null,
+      frames: 1,
       frame: 0,
-      timer: 0,
-      msPerFrame: 1000 / FPS,
-      looping: true,
+      acc: 0,
       playingOnce: false,
-      onFinish: null
+      onEnd: null
     };
 
-    function loadSheet(sheet, { loop=true, once=false, onFinish=null } = {}){
-      current.sheet = sheet;
-      current.frame = 0;
-      current.timer = 0;
-      current.looping = loop;
-      current.playingOnce = once;
-      current.onFinish = onFinish;
-      current.img = new Image();
-      current.img.onload = () => { /* will render in loop */ };
-      current.img.src = sheet.src;
-    }
+    const FRAME_TIME = 1000 / FPS;
 
-    function drawFrame(){
-      const sx = current.frame * FRAME_W;
-      const sy = 0;
-      ctx.clearRect(0,0,canvas.width, canvas.height);
-      // draw centered-ish
-      ctx.drawImage(
-        current.img,
-        sx, sy, FRAME_W, FRAME_H,
-        CENTER_X, CENTER_Y, FRAME_W, FRAME_H
-      );
-    }
+    function loop(timestamp){
+      requestAnimationFrame(loop);
+      if(!current.img) return;
 
-    let last = performance.now();
-    function loop(now){
-      const dt = now - last;
-      last = now;
-      current.timer += dt;
+      // advance frame timing
+      if(!current.prev) current.prev = timestamp;
+      const delta = timestamp - current.prev;
+      current.prev = timestamp;
+      current.acc += delta;
 
-      // advance frames by time
-      while(current.timer >= current.msPerFrame){
-        current.timer -= current.msPerFrame;
+      while(current.acc >= FRAME_TIME){
+        current.acc -= FRAME_TIME;
         current.frame++;
-
-        if(current.frame >= current.sheet.frames){
+        if(current.frame >= current.frames){
           if(current.playingOnce){
-            // end one-shot
-            if (typeof current.onFinish === 'function') current.onFinish();
-            // stop advancing until next loadSheet sets up again
+            // stop one-shot and call end
+            const end = current.onEnd;
             current.playingOnce = false;
-            current.looping = false;
-            current.frame = current.sheet.frames - 1;
-          }else if(current.looping){
-            current.frame = 0;
+            current.onEnd = null;
+            if(end) end();
+            return; // next loop will draw new state
           }
+          current.frame = 0;
         }
       }
+      drawFrame(current.img, current.frame);
+    }
+    requestAnimationFrame(loop);
 
-      drawFrame();
-      requestAnimationFrame(loop);
+    // load a sheet and start playing
+    function playSheet(src, { once=false, onEnd=null } = {}){
+      const img = new Image();
+      img.onload = () => {
+        current.img = img;
+        current.frames = Math.max(1, Math.floor(img.width / FRAME_W));
+        current.frame = 0;
+        current.acc = 0;
+        current.prev = 0;
+        current.playingOnce = once;
+        current.onEnd = onEnd;
+        drawFrame(img, 0);
+      };
+      img.src = src;
     }
 
-    // ---------- ACTIONS ----------
-    function playIdleNormal(){
-      loadSheet(SHEETS.idle, { loop:true });
-      isSick = false;
-    }
-    function playIdleSick(){
-      loadSheet(SHEETS.sickIdle, { loop:true });
-      isSick = true;
+    // ---------- STATE LOGIC ----------
+    let state = 'normal';  // 'normal' | 'sick'
+
+    function playIdle(){
+      if(state === 'normal'){
+        playSheet(SHEETS.idleNormal);
+      }else{
+        playSheet(SHEETS.idleSick);
+      }
     }
 
     function doKimchi(){
-      // Eat once; when done → healthy idle
-      loadSheet(SHEETS.kimchi, {
-        loop:false,
-        once:true,
-        onFinish: () => playIdleNormal()
-      });
+      // play the eat animation once, then go to normal idle
+      state = 'normal';
+      playSheet(SHEETS.kimchiOnce, { once:true, onEnd: playIdle });
     }
 
     function doVodka(){
-      // Drink once; when done → sick idle
-      loadSheet(SHEETS.vodka, {
-        loop:false,
+      // play the vodka animation once, then switch to sick idle (loop)
+      playSheet(SHEETS.vodkaOnce, {
         once:true,
-        onFinish: () => playIdleSick()
+        onEnd: () => { state = 'sick'; playIdle(); }
       });
     }
 
-    // ---------- WIRE BUTTONS ----------
+    // ---------- HOOK UP BUTTONS ----------
     document.getElementById('btnKimchi').addEventListener('click', doKimchi);
-    document.getElementById('btnVodka').addEventListener('click', doVodka);
+    document.getElementById('btnVodka').addEventListener('click',  doVodka);
 
     // ---------- BOOT ----------
-    playIdleNormal();            // start with healthy idle loop
-    requestAnimationFrame(loop); // start render loop
+    playIdle(); // start with normal idle looping
   </script>
 </body>
 </html>
