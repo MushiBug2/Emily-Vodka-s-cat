@@ -15,10 +15,42 @@
       background:#fff; 
       border:1px solid #ddd 
     }
-  </style>
+    <style>
+  canvas {
+    image-rendering: pixelated;
+    background:#fff;
+    border:1px solid #ddd;
+  }
+
+  .button-row {
+    margin-top: 20px;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+  }
+
+  .button-row button {
+    padding: 10px 20px;
+    font-size: 18px;
+    border: 2px solid #333;
+    background: #f2f2f2;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+
+  .button-row button:hover {
+    background: #ddd;
+  }
+</style>  </style>
 </head>
 <body>
   <canvas id="game" width="128" height="128"></canvas>
+  
+  <div class="button-row">
+  <button onclick="showKimchi()">🍲 Kimchi</button>
+  <button onclick="showIdle()">🍸 Vodka</button>
+</div>  
+  
   <script>
     // Frame settings for your sprite sheet
     const FRAME_W = 64;      // width of each frame
