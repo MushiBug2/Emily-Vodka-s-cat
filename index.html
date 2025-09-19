@@ -6,168 +6,170 @@
   <style>
     html, body { height:100%; margin:0; }
     body{
-      background:#ffffff;               /* white background */
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      justify-content:center;
-      gap:24px;
+      background:#ffffff;                    /* white background */
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      gap:28px;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
     }
 
-    /* canvas box */
-    .stage{
-      width:256px; height:256px;        
-      display:grid; place-items:center;
-      background:#fff;
-    }
+    /* Canvas */
     canvas{
       image-rendering: pixelated;
-      image-rendering: crisp-edges;
-      width:256px; height:256px;        
       background:#fff;
+      width:256px; height:256px;             /* CSS size */
     }
 
-    /* buttons row */
-    .buttons{
-      display:flex; gap:28px;
-    }
-    .buttons button{
-      display:flex; align-items:center; gap:14px;
-      padding:18px 24px;
-      font-size:22px;
-      border:none;                      /* remove box */
-      background:#fff;
-      cursor:pointer;
-      transition: transform .05s ease;
-    }
-    .buttons button:active{ transform: scale(0.97); }
+    /* Buttons row */
+    .buttons{ display:flex; gap:24px; }
 
-    .buttons img{
-      width:32px; height:32px;          
-      image-rendering: pixelated;
+    /* Minimal, no boxes */
+    .btn{
+      display:flex; align-items:center; gap:12px;
+      background:transparent; border:none; padding:0;
+      color:#111; font-size:28px; cursor:pointer;
+      user-select:none;
     }
+    .btn img{ image-rendering: pixelated; display:block; }
+
+    /* icon sizes (vodka 5x kimchi) */
+    .icon-kimchi{ width:40px; height:auto; }
+    .icon-vodka { width:200px; height:auto; } /* ~5× */
   </style>
 </head>
 <body>
 
-  <div class="stage">
-    <canvas id="game" width="64" height="64"></canvas>
-  </div>
+  <!-- Game area -->
+  <canvas id="game" width="256" height="256" aria-label="Emily's cat"></canvas>
 
+  <!-- Buttons -->
   <div class="buttons">
-    <button id="btnKimchi">
-      <img src="KImchi.png" alt="Kimchi">
+    <button id="btnKimchi" class="btn" title="Kimchi">
+      <img class="icon-kimchi" src="KImchi.png" alt="Kimchi">
       Kimchi
     </button>
-    <button id="btnVodka">
-      <img src="vodka.png" alt="Vodka">
+
+    <button id="btnVodka" class="btn" title="Vodka">
+      <img class="icon-vodka" src="vodka.png" alt="Vodka">
       Vodka
     </button>
   </div>
 
   <script>
-    /* --------- constants --------- */
-    const FRAME_W = 64;
-    const FRAME_H = 64;
-    const FPS = 4;                       
+    // ====== settings ======
+    const FRAME_W = 64, FRAME_H = 64;    // each frame size
+    const FPS = 4;                       // slower animation
+    const CANVAS_SIZE = 256;             // canvas is 256x256
+    const SCALE = CANVAS_SIZE / FRAME_W; // 4x scale
+    // ======================
 
-    /* --------- spritesheets --------- */
-    const SHEETS = {
-      idleNormal:       'Normalidle.png',
-      idleSick:         'sixkidle2.png',
-      kimchi_normal:    'normalkimchinormal.png',
-      kimchi_sickHeal:  'sickkimchinormal.png',
-      vodka_normalSick: 'normalvodkasick.png',
-      vodka_sickStay:   'sickvodkasick.png'
-    };
-
-    /* --------- state --------- */
-    let isSick = false;                  
-    let playingOnce = false;
-
-    /* --------- canvas --------- */
     const canvas = document.getElementById('game');
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
     ctx.imageSmoothingEnabled = false;
 
-    /* --------- animation state --------- */
-    const state = {
-      img: null,
-      frame: 0,
-      framesTotal: 1,
-      tick: 0,
-      ticksPerFrame: Math.max(1, Math.round(60 / FPS)),
-      onDone: null
+    // Sprite sheets (auto-calc frames from image width)
+    const SHEETS = {
+      idle:           { src: 'NormalIdle.png' },              // default loop
+      sickIdle:       { src: 'sixkidle2.png' },               // sick loop
+      kimchi:         { src: 'normalkimchinormal.png', once:true, heal:true },
+      vodka:          { src: 'normalvodkasick.png',  once:true, makeSick:true }
     };
 
-    function loadAndPlay(src, playOnce=false, after=null){
-      playingOnce = playOnce;
-      state.onDone = after || null;
-
-      const img = new Image();
-      img.onload = () => {
-        state.img = img;
-        state.frame = 0;
-        state.tick = 0;
-        state.framesTotal = Math.max(1, Math.floor(img.width / FRAME_W));
-        requestAnimationFrame(loop);
-      };
-      img.src = src;
+    // simple image cache
+    const cache = new Map();
+    function getImg(src){
+      return new Promise((resolve, reject)=>{
+        if (cache.has(src)) return resolve(cache.get(src));
+        const img = new Image();
+        img.onload = ()=>{ cache.set(src, img); resolve(img); };
+        img.onerror = reject;
+        img.src = src;
+      });
     }
 
-    function loop(){
-      state.tick++;
-      if (state.tick >= state.ticksPerFrame){
-        state.tick = 0;
-        state.frame++;
-        if (state.frame >= state.framesTotal){
-          if (playingOnce){
-            if (typeof state.onDone === 'function') state.onDone();
-            return;
-          }
-          state.frame = 0;
+    // state
+    let baseline = 'idle';      // 'idle' or 'sickIdle'
+    let current  = null;        // currently playing sheet key
+    let frame = 0;
+    let totalFrames = 1;
+    let lastTime = 0;
+    let playingOnce = false;
+    let img = null;
+
+    async function play(key){
+      current = key;
+      const sheet = SHEETS[key];
+      img = await getImg(sheet.src);
+      totalFrames = Math.max(1, Math.floor(img.width / FRAME_W)); // auto-detect
+      frame = 0;
+      playingOnce = !!sheet.once;
+    }
+
+    function setHealthy(){ baseline = 'idle'; }
+    function setSick(){ baseline = 'sickIdle'; }
+
+    async function doKimchi(){
+      await play('kimchi');
+      // on finish -> healthy idle
+      onFinish = ()=>{ setHealthy(); play(baseline); };
+    }
+
+    async function doVodka(){
+      await play('vodka');
+      // on finish -> sick idle
+      onFinish = ()=>{ setSick(); play(baseline); };
+    }
+
+    // draw loop with FPS throttle
+    let onFinish = null;
+    function loop(ts){
+      requestAnimationFrame(loop);
+
+      if (!img) return;
+
+      // throttle to FPS
+      if (ts - lastTime < 1000 / FPS) return;
+      lastTime = ts;
+
+      // clear
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      // source frame rect
+      const sx = frame * FRAME_W;
+      const sy = 0;
+
+      // dest centered
+      const dx = Math.floor((canvas.width  - FRAME_W * SCALE) / 2);
+      const dy = Math.floor((canvas.height - FRAME_H * SCALE) / 2);
+
+      ctx.drawImage(
+        img,
+        sx, sy, FRAME_W, FRAME_H,
+        dx, dy, FRAME_W * SCALE, FRAME_H * SCALE
+      );
+
+      frame++;
+
+      if (frame >= totalFrames) {
+        if (playingOnce) {
+          playingOnce = false;
+          // finish the one-shot, then go baseline
+          if (typeof onFinish === 'function') { const f = onFinish; onFinish = null; f(); }
+        } else {
+          frame = 0; // loop
         }
       }
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const sx = state.frame * FRAME_W;
-      ctx.drawImage(state.img, sx, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
-      requestAnimationFrame(loop);
     }
 
-    /* --------- actions --------- */
-    function playIdle(){
-      loadAndPlay(isSick ? SHEETS.idleSick : SHEETS.idleNormal, false);
-    }
-
-    function doKimchi(){
-      if (isSick){
-        loadAndPlay(SHEETS.kimchi_sickHeal, true, () => {
-          isSick = false;
-          playIdle();
-        });
-      } else {
-        loadAndPlay(SHEETS.kimchi_normal, true, playIdle);
-      }
-    }
-
-    function doVodka(){
-      if (isSick){
-        loadAndPlay(SHEETS.vodka_sickStay, true, playIdle);
-      } else {
-        loadAndPlay(SHEETS.vodka_normalSick, true, () => {
-          isSick = true;
-          playIdle();
-        });
-      }
-    }
-
-    /* --------- buttons --------- */
+    // wire buttons
     document.getElementById('btnKimchi').addEventListener('click', doKimchi);
     document.getElementById('btnVodka').addEventListener('click', doVodka);
 
-    /* --------- boot --------- */
-    playIdle();
+    // boot: start normal idle loop
+    (async () => {
+      await play(baseline);
+      requestAnimationFrame(loop);
+    })();
   </script>
 </body>
 </html>
