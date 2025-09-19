@@ -17,15 +17,14 @@
 
     /* canvas box */
     .stage{
-      width:256px; height:256px;        /* 4× scale of 64px frames */
-      border:1px solid #ddd;
+      width:256px; height:256px;        
       display:grid; place-items:center;
       background:#fff;
     }
     canvas{
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-      width:256px; height:256px;        /* upscale the 64×64 drawing */
+      width:256px; height:256px;        
       background:#fff;
     }
 
@@ -37,22 +36,17 @@
       display:flex; align-items:center; gap:14px;
       padding:18px 24px;
       font-size:22px;
-      border-radius:10px;
-      border:2px solid #333;
+      border:none;                      /* remove box */
       background:#fff;
       cursor:pointer;
-      box-shadow:0 1px 0 #999 inset;
       transition: transform .05s ease;
     }
-    .buttons button:active{ transform: translateY(1px); }
+    .buttons button:active{ transform: scale(0.97); }
 
     .buttons img{
-      width:32px; height:32px;          /* small pixel icon */
+      width:32px; height:32px;          
       image-rendering: pixelated;
     }
-
-    /* tiny helper text (optional) */
-    .hint{ color:#999; font-size:12px; }
   </style>
 </head>
 <body>
@@ -63,7 +57,7 @@
 
   <div class="buttons">
     <button id="btnKimchi">
-      <img src="Kimchi.png" alt="Kimchi">
+      <img src="Klmchi.png" alt="Kimchi">
       Kimchi
     </button>
     <button id="btnVodka">
@@ -76,12 +70,12 @@
     /* --------- constants --------- */
     const FRAME_W = 64;
     const FRAME_H = 64;
-    const FPS = 8;                       // animation speed
+    const FPS = 8;                       
 
-    /* --------- spritesheets (from your repo) --------- */
+    /* --------- spritesheets --------- */
     const SHEETS = {
       idleNormal:       'Normalidle.png',
-      idleSick:         'sickidle2.png',
+      idleSick:         'sixkidle2.png',
       kimchi_normal:    'normalkimchinormal.png',
       kimchi_sickHeal:  'sickkimchinormal.png',
       vodka_normalSick: 'normalvodkasick.png',
@@ -89,23 +83,21 @@
     };
 
     /* --------- state --------- */
-    let isSick = false;                  // default normal
+    let isSick = false;                  
     let playingOnce = false;
 
     /* --------- canvas --------- */
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
-
-    /* scale drawing cleanly (we upscale via CSS, but keep nearest-neighbor) */
     ctx.imageSmoothingEnabled = false;
 
-    /* --------- generic animation player --------- */
+    /* --------- animation state --------- */
     const state = {
       img: null,
       frame: 0,
       framesTotal: 1,
       tick: 0,
-      ticksPerFrame: Math.max(1, Math.round(60 / FPS)),  // 60fps requestAnimationFrame pacing
+      ticksPerFrame: Math.max(1, Math.round(60 / FPS)),
       onDone: null
     };
 
@@ -118,7 +110,6 @@
         state.img = img;
         state.frame = 0;
         state.tick = 0;
-        // auto-detect number of frames by width / 64
         state.framesTotal = Math.max(1, Math.floor(img.width / FRAME_W));
         requestAnimationFrame(loop);
       };
@@ -126,53 +117,44 @@
     }
 
     function loop(){
-      // advance timing
       state.tick++;
       if (state.tick >= state.ticksPerFrame){
         state.tick = 0;
         state.frame++;
         if (state.frame >= state.framesTotal){
           if (playingOnce){
-            // finish one-shot animation
             if (typeof state.onDone === 'function') state.onDone();
-            return; // stop drawing until something else plays
+            return;
           }
-          state.frame = 0; // loop idle
+          state.frame = 0;
         }
       }
-
-      // draw current frame centered
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const sx = state.frame * FRAME_W;
       ctx.drawImage(state.img, sx, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
-
       requestAnimationFrame(loop);
     }
 
-    /* --------- higher-level helpers --------- */
+    /* --------- actions --------- */
     function playIdle(){
       loadAndPlay(isSick ? SHEETS.idleSick : SHEETS.idleNormal, false);
     }
 
     function doKimchi(){
       if (isSick){
-        // sick -> heal
         loadAndPlay(SHEETS.kimchi_sickHeal, true, () => {
           isSick = false;
           playIdle();
         });
       } else {
-        // normal -> just eat, stay normal
         loadAndPlay(SHEETS.kimchi_normal, true, playIdle);
       }
     }
 
     function doVodka(){
       if (isSick){
-        // sick -> drink, stay sick
         loadAndPlay(SHEETS.vodka_sickStay, true, playIdle);
       } else {
-        // normal -> drink, become sick
         loadAndPlay(SHEETS.vodka_normalSick, true, () => {
           isSick = true;
           playIdle();
@@ -180,7 +162,7 @@
       }
     }
 
-    /* --------- wire up buttons --------- */
+    /* --------- buttons --------- */
     document.getElementById('btnKimchi').addEventListener('click', doKimchi);
     document.getElementById('btnVodka').addEventListener('click', doVodka);
 
