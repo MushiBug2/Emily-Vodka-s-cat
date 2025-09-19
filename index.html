@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Emily’s Cat</title>
+  <style>
+    html,body {height:100%;margin:0}
+    body{
+      background:#f2f2f2;
+      display:flex;align-items:center;justify-content:center;
+      font-family:system-ui, sans-serif;
+    }
+    canvas{ 
+      image-rendering: pixelated; 
+      background:#fff; 
+      border:1px solid #ddd 
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="128" height="128"></canvas>
+  <script>
+    // Frame settings for your sprite sheet
+    const FRAME_W = 64;      // width of each frame
+    const FRAME_H = 64;      // height of each frame
+    const FPS      = 6;      // animation speed (lower = slower, higher = faster)
+
+    const canvas = document.getElementById('game');
+    const ctx    = canvas.getContext('2d');
+
+    // scale up 2x so the cat isn’t tiny
+    const SCALE = 2;
+    canvas.width  = FRAME_W * SCALE;
+    canvas.height = FRAME_H * SCALE;
+
+    // load your sprite sheet (must match filename exactly in repo)
+    const sheet = new Image();
+    sheet.src = 'Normalidle.png'; 
+
+    let frame = 0, frames = 1;
+
+    sheet.onload = () => {
+      // auto-calc how many frames are in the row
+      frames = Math.max(1, Math.floor(sheet.width / FRAME_W));
+      const frameTime = 1000 / FPS;
+      let last = 0;
+
+      function loop(t){
+        if (t - last >= frameTime){
+          frame = (frame + 1) % frames;
+          last = t;
+        }
+        // draw current frame (crop from sprite sheet)
+        const sx = frame * FRAME_W;
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(sheet, sx, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W*SCALE, FRAME_H*SCALE);
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+    };
+  </script>
+</body>
+</html>
