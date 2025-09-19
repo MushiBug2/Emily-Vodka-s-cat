@@ -1,124 +1,198 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>Emily’s Cat</title>
-<style>
-  html, body { height:100%; margin:0; }
-  body{
-    background:#f2f2f2;
-    display:flex; flex-direction:column;
-    align-items:center; justify-content:center;
-    gap:16px;
-    font-family:system-ui, sans-serif;
-  }
-  canvas{
-    image-rendering: pixelated;
-    background:#fff;
-    border:1px solid #ddd;
-  }
-  .button-row{
-    display:flex;
-    gap:20px;
-    justify-content:center;
-  }
-  /* image buttons */
-  .btn {
-    width:72px; height:72px;
-    border:2px solid #333; border-radius:6px;
-    background:#f2f2f2 center / contain no-repeat;
-    cursor:pointer; font-size:14px;
-    display:flex; align-items:flex-end; justify-content:center;
-    padding-bottom:6px;
-  }
-  .btn:focus { outline: none; }
-  .btn:hover { background-color:#eaeaea; }
+  <meta charset="utf-8" />
+  <title>Emily's Cat</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body{
+      background:#f2f2f2;
+      display:flex;
+      flex-direction:column;         /* canvas on top, buttons under */
+      align-items:center;
+      justify-content:center;
+      gap:16px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
 
-  /* IMPORTANT: match EXACT file names (case sensitive) */
-  .btn-kimchi { background-image:url('Kimchi.png'); }
-  .btn-vodka  { background-image:url('vodka.png'); }
-</style>
+    /* Canvas area */
+    .stage{
+      width: 256px;                  /* display size (scaled) */
+      height:256px;
+      display:grid;
+      place-items:center;
+      background:#fff;
+      border:1px solid #ddd;
+    }
+    canvas{
+      width: 192px;                  /* scale the 128x128 canvas 1.5x */
+      height:192px;
+      image-rendering: pixelated;
+      background:#fff;
+    }
+
+    /* Buttons row */
+    .button-row{
+      display:flex;
+      gap:20px;
+      justify-content:center;
+      align-items:center;
+    }
+    .icon-btn{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding: 10px 20px;
+      font-size:18px;
+      border:2px solid #333;
+      background:#f2f2f2;
+      border-radius:6px;
+      cursor:pointer;
+      user-select:none;
+    }
+    .icon-btn:hover{ background:#ddd; }
+    .icon-btn img{
+      width:28px; height:28px;
+      image-rendering: pixelated;
+    }
+
+    /* tiny status text (errors/fallbacks) */
+    #status { color:#666; font-size:12px; min-height:1em; }
+  </style>
 </head>
 <body>
 
-<canvas id="game" width="128" height="128"></canvas>
+  <!-- Canvas holder -->
+  <div class="stage">
+    <canvas id="game" width="128" height="128"></canvas>
+  </div>
 
-<div class="button-row">
-  <button class="btn btn-kimchi" title="Kimchi" onclick="showKimchi()">Kimchi</button>
-  <button class="btn btn-vodka"  title="Vodka"  onclick="showIdle()">Vodka</button>
-</div>
+  <!-- Buttons -->
+  <div class="button-row">
+    <button class="icon-btn" id="kimchiBtn">
+      <img src="Kimchi.png" alt="Kimchi">
+      Kimchi
+    </button>
+    <button class="icon-btn" id="vodkaBtn">
+      <img src="vodka.png" alt="Vodka">
+      Vodka
+    </button>
+  </div>
 
-<script>
-  // ===== Sprite settings (match your sheet) =====
-  const FRAME_W = 64;     // each frame width
-  const FRAME_H = 64;     // each frame height
-  const FPS      = 6;     // animation speed
-  const SCALE    = 2;     // draw bigger on the canvas
+  <div id="status"></div>
 
-  const canvas = document.getElementById('game');
-  const ctx    = canvas.getContext('2d');
+  <script>
+    /* -------------------------------------------
+       FILE NAMES — change these if you export new sheets
+       (put the PNGs in this same repo folder)
+    -------------------------------------------- */
+    const SHEETS = {
+      idle:  'NormalIdle.png',      // your idle sheet (already uploaded)
+      kimchi:'NormalKimchi.png',    // export later; we’ll fall back to idle if missing
+      vodka: 'NormalVodka.png'      // export later; we’ll fall back to idle if missing
+    };
 
-  // State for current animation
-  const state = {
-    img: null,
-    totalFrames: 4, // <-- set to the actual number of frames in Normalidle.png
-    frame: 0,
-    tick: 0,
-    ticksPerFrame: Math.max(1, Math.round(60 / FPS)),
-    frameWidth: FRAME_W,
-    frameHeight: FRAME_H
-  };
+    /* -------------------------------------------
+       SPRITE SETTINGS
+       - FRAME_W/H should match what you exported from Aseprite
+       - FPS is animation speed
+       - We auto-detect total frames from the sheet width (1 row)
+    -------------------------------------------- */
+    const FRAME_W = 64;   // width of a single frame in your sheet
+    const FRAME_H = 64;   // height of a single frame in your sheet
+    const FPS      = 6;   // 6–10 is a nice range for 8-bit vibes
 
-  function loop(){
-    requestAnimationFrame(loop);
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
 
-    // advance frames on a simple timer
-    state.tick++;
-    if (state.tick >= state.ticksPerFrame){
-      state.tick = 0;
-      state.frame = (state.frame + 1) % state.totalFrames;
+    const state = {
+      img: null,
+      frame: 0,
+      totalFrames: 1,
+      acc: 0,
+      msPerFrame: 1000 / FPS,
+      playing: false,
+      playOnce: false,
+      onDone: null
+    };
+
+    function setStatus(msg){
+      document.getElementById('status').textContent = msg || '';
     }
 
-    // clear and draw current frame, scaled
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+    function loadSheet(src, {playOnce=false, onDone=null} = {}){
+      const img = new Image();
+      img.onload = () => {
+        state.img = img;
+        // Assume 1 horizontal row
+        state.totalFrames = Math.max(1, Math.floor(img.width / FRAME_W));
+        state.frame = 0;
+        state.acc = 0;
+        state.playOnce = playOnce;
+        state.onDone = onDone || null;
+        state.playing = true;
+        setStatus('');
+        requestAnimationFrame(loop);
+      };
+      img.onerror = () => {
+        // If the requested sheet isn't found, fall back to idle
+        if (src !== SHEETS.idle){
+          setStatus('Couldn\'t load "' + src + '" — showing idle instead.');
+          loadSheet(SHEETS.idle);
+        } else {
+          setStatus('Couldn\'t load "' + src + '". Check the filename & commit.');
+        }
+      };
+      img.src = src;
+    }
 
-    // center the cat on canvas
-    const drawW = state.frameWidth * SCALE;
-    const drawH = state.frameHeight * SCALE;
-    const dx = (canvas.width - drawW) / 2;
-    const dy = (canvas.height - drawH) / 2;
+    function loop(ts){
+      if (!state.playing || !state.img) return;
 
-    const sx = state.frame * state.frameWidth;
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(state.img, sx, 0, state.frameWidth, state.frameHeight, dx, dy, drawW, drawH);
-  }
+      // Advance timing
+      if (!state.last) state.last = ts;
+      const dt = ts - state.last;
+      state.last = ts;
+      state.acc += dt;
 
-  function playSprite(src, totalFrames){
-    const img = new Image();
-    img.onload = () => {
-      state.img = img;
-      state.totalFrames = totalFrames;
-      state.frame = 0;
-      state.tick = 0;
-    };
-    img.src = src;
-  }
+      while (state.acc >= state.msPerFrame){
+        state.acc -= state.msPerFrame;
+        state.frame++;
+        if (state.frame >= state.totalFrames){
+          if (state.playOnce){
+            state.playing = false;
+            if (typeof state.onDone === 'function') state.onDone();
+            // Return to idle after a one-shot anim
+            loadSheet(SHEETS.idle);
+            return;
+          } else {
+            state.frame = 0; // loop
+          }
+        }
+      }
 
-  // ——— Buttons ———
-  function showKimchi(){
-    // when you export the eating animation sprite sheet, update the file name & frame count here
-    playSprite('Normalidle.png', state.totalFrames); // placeholder until you add kimchi sheet
-  }
-  function showIdle(){
-    playSprite('Normalidle.png', state.totalFrames);
-  }
+      // Clear & draw current frame
+      ctx.clearRect(0,0,canvas.width, canvas.height);
+      const sx = state.frame * FRAME_W;
+      ctx.drawImage(state.img, sx, 0, FRAME_W, FRAME_H,
+                    Math.floor((canvas.width - FRAME_W)/2),
+                    Math.floor((canvas.height - FRAME_H)/2),
+                    FRAME_W, FRAME_H);
+      requestAnimationFrame(loop);
+    }
 
-  // Start idle as soon as page loads
-  window.addEventListener('load', () => {
-    // IMPORTANT: Filename must exactly match what’s in your repo: "Normalidle.png"
-    playSprite('Normalidle.png', 4); // change 4 to however many frames Normalidle.png has
-    loop();
-  });
-</script>
+    // Button handlers
+    document.getElementById('kimchiBtn').addEventListener('click', () => {
+      // play once, then return to idle
+      loadSheet(SHEETS.kimchi, { playOnce:true });
+    });
+    document.getElementById('vodkaBtn').addEventListener('click', () => {
+      // play once, then return to idle
+      loadSheet(SHEETS.vodka, { playOnce:true });
+    });
+
+    // Start with idle
+    loadSheet(SHEETS.idle);
+  </script>
 </body>
 </html>
