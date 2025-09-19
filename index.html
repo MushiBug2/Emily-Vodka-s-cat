@@ -2,6 +2,167 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <title>Emily's Cat</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body{
+      background:#ffffff;                /* white background */
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      gap: 24px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+
+    /* Canvas centered, no border box */
+    #game {
+      image-rendering: pixelated;
+      background:#fff;
+      width: 256px; height: 256px;       /* scale the 64x64 frames 4x */
+    }
+
+    /* Button row */
+    .button-row{
+      display:flex; justify-content:center; gap: 24px;
+    }
+
+    /* Image buttons (no box look) */
+    .imgbtn{
+      display:flex; align-items:center; gap: 12px;
+      padding: 10px 18px;
+      font-size: 22px; font-weight: 700;
+      color:#222; background: transparent;
+      border: none; outline: none;
+      cursor: pointer;
+    }
+    .imgbtn img{
+      width: 28px; height: 28px; image-rendering: pixelated;
+    }
+    .imgbtn:active{ transform: translateY(1px); }
+  </style>
+</head>
+<body>
+
+  <!-- Game canvas -->
+  <canvas id="game" width="64" height="64"></canvas>
+
+  <!-- Buttons with your static images -->
+  <div class="button-row">
+    <button id="btnKimchi" class="imgbtn">
+      <img src="Klmchi.png" alt="Kimchi" />
+      Kimchi
+    </button>
+    <button id="btnVodka" class="imgbtn">
+      <img src="vodka.png" alt="Vodka" />
+      Vodka
+    </button>
+  </div>
+
+<script>
+/* ---------- CONFIG (adjust frames if needed) ---------- */
+const FRAME_W = 64;      // sprite frame width
+const FRAME_H = 64;      // sprite frame height
+const FPS      = 8;      // animation speed (lower = slower)
+
+/* Sprite sheets & frame counts.
+   Update `frames` if your exports have different lengths. */
+const SHEETS = {
+  idle:               { src: 'Normalidle.png',        frames: 4  },
+  sickIdle:           { src: 'sixkidle2.png',         frames: 4  },
+  normalKimchi:       { src: 'normalkimchinormal.png',frames: 8  },
+  sickKimchi:         { src: 'sickkimchinormal.png',  frames: 8  },
+  normalVodka:        { src: 'normalvodkasick.png',   frames: 8  },
+  sickVodka:          { src: 'sickvodkasick.png',     frames: 8  }
+};
+
+/* ---------- RENDER SETUP ---------- */
+const canvas = document.getElementById('game');
+const ctx    = canvas.getContext('2d');
+
+let state = {
+  img: new Image(),
+  sheet: null,
+  frame: 0,
+  tick: 0,
+  ticksPerFrame: Math.max(1, Math.floor(60 / FPS)),
+  playingOnce: false,        // true = play sheet once then switch
+  nextSheet: null,
+  sick: false                // health state
+};
+
+function loadSheet(key, playOnce=false, thenKey=null){
+  const s = SHEETS[key];
+  if(!s) return;
+
+  state.sheet = { key, ...s };
+  state.playingOnce = playOnce;
+  state.nextSheet = thenKey || null;
+  state.frame = 0;
+  state.tick  = 0;
+
+  const img = new Image();
+  img.onload = () => { state.img = img; };
+  img.src = s.src;
+}
+
+function loop(){
+  requestAnimationFrame(loop);
+
+  // advance frames
+  if (++state.tick >= state.ticksPerFrame){
+    state.tick = 0;
+    state.frame++;
+    if (state.frame >= state.sheet.frames){
+      if (state.playingOnce){
+        // jump to the requested next animation
+        const next = state.nextSheet || (state.sick ? 'sickIdle' : 'idle');
+        loadSheet(next, false);
+      } else {
+        state.frame = 0; // loop
+      }
+    }
+  }
+
+  // clear & draw current frame
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const sx = state.frame * FRAME_W;
+  ctx.drawImage(state.img, sx, 0, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
+}
+
+/* ---------- BUTTON BEHAVIOR ---------- */
+function doKimchi(){
+  // play kimchi animation depending on health, then switch to NORMAL idle
+  if (state.sick){
+    loadSheet('sickKimchi', true, 'idle');
+  } else {
+    loadSheet('normalKimchi', true, 'idle');
+  }
+  state.sick = false; // heals
+}
+
+function doVodka(){
+  // play vodka animation depending on health, then switch to SICK idle
+  if (state.sick){
+    loadSheet('sickVodka', true, 'sickIdle');
+  } else {
+    loadSheet('normalVodka', true, 'sickIdle');
+  }
+  state.sick = true; // becomes/remains sick
+}
+
+/* ---------- BOOT ---------- */
+document.getElementById('btnKimchi').addEventListener('click', doKimchi);
+document.getElementById('btnVodka').addEventListener('click', doVodka);
+
+// start default normal idle
+loadSheet('idle', false);
+loop();
+</script>
+</body>
+</html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
   <title>Emily’s Cat</title>
   <style>
     html, body { height:100%; margin:0; }
