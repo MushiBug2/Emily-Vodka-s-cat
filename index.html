@@ -1,258 +1,124 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Emily’s Cat</title>
-  <style>
-    html, body { height: 100%; margin: 0; }
-    body{
-      background:#f2f2f2;
-      display:flex;
-      flex-direction:column;         /* stack canvas then buttons */
-      align-items:center;
-      justify-content:center;
-      gap:16px;                      /* space between canvas & buttons */
-      font-family: system-ui, sans-serif;
-    }
-    canvas{
-      image-rendering: pixelated;
-      background:#fff;
-      border:1px solid #ddd;
-    }
-    .button-row{
-      display:flex;
-      gap:20px;
-      justify-content:center;
-      align-items:center;
-    }
-    .btn{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      padding:10px 16px;
-      font-size:18px;
-      border:2px solid #333;
-      background:#f2f2f2;
-      border-radius:6px;
-      cursor:pointer;
-    }
-    .btn:hover{ background:#e6e6e6; }
-    .btn img{
-      width:24px; height:24px; image-rendering: pixelated;
-    }
-  </style>
+<meta charset="utf-8" />
+<title>Emily’s Cat</title>
+<style>
+  html, body { height:100%; margin:0; }
+  body{
+    background:#f2f2f2;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    gap:16px;
+    font-family:system-ui, sans-serif;
+  }
+  canvas{
+    image-rendering: pixelated;
+    background:#fff;
+    border:1px solid #ddd;
+  }
+  .button-row{
+    display:flex;
+    gap:20px;
+    justify-content:center;
+  }
+  /* image buttons */
+  .btn {
+    width:72px; height:72px;
+    border:2px solid #333; border-radius:6px;
+    background:#f2f2f2 center / contain no-repeat;
+    cursor:pointer; font-size:14px;
+    display:flex; align-items:flex-end; justify-content:center;
+    padding-bottom:6px;
+  }
+  .btn:focus { outline: none; }
+  .btn:hover { background-color:#eaeaea; }
+
+  /* IMPORTANT: match EXACT file names (case sensitive) */
+  .btn-kimchi { background-image:url('Kimchi.png'); }
+  .btn-vodka  { background-image:url('vodka.png'); }
+</style>
 </head>
 <body>
 
-  <!-- canvas (we’ll scale it so pixels stay chunky) -->
-  <canvas id="game" width="128" height="128"></canvas>
+<canvas id="game" width="128" height="128"></canvas>
 
-  <!-- buttons -->
-  <div class="button-row">
-    <button class="btn" onclick="showKimchi()">
-      <img src="Kimchi.png" alt="kimchi" />
-      Kimchi
-    </button>
-    <button class="btn" onclick="showVodka()">🍸 Vodka</button>
-  </div>
+<div class="button-row">
+  <button class="btn btn-kimchi" title="Kimchi" onclick="showKimchi()">Kimchi</button>
+  <button class="btn btn-vodka"  title="Vodka"  onclick="showIdle()">Vodka</button>
+</div>
 
 <script>
-/* ------------------------------------------------------------------ */
-/* 1) CONFIG: point these at your files + frame counts                 */
-/* ------------------------------------------------------------------ */
-const SPRITES = {
-  idle:  { src: 'NormalIdle.png', frames: 4, fw: 64, fh: 64, speed: 8 },
-  eat:   { src: 'NormalEat.png',  frames: 6, fw: 64, fh: 64, speed: 8 },  // optional
-  vodka: { src: 'Vodka.png',      frames: 6, fw: 64, fh: 64, speed: 8 }   // optional
-};
+  // ===== Sprite settings (match your sheet) =====
+  const FRAME_W = 64;     // each frame width
+  const FRAME_H = 64;     // each frame height
+  const FPS      = 6;     // animation speed
+  const SCALE    = 2;     // draw bigger on the canvas
 
-// scale up so it’s not tiny (2 = 128px canvas drawn to 256 CSS px)
-const SCALE = 2;
+  const canvas = document.getElementById('game');
+  const ctx    = canvas.getContext('2d');
 
-/* ------------------------------------------------------------------ */
-/* 2) SETUP CANVAS (crisp pixels on HiDPI)                             */
-/* ------------------------------------------------------------------ */
-const cvs = document.getElementById('game');
-const ctx = cvs.getContext('2d');
+  // State for current animation
+  const state = {
+    img: null,
+    totalFrames: 4, // <-- set to the actual number of frames in Normalidle.png
+    frame: 0,
+    tick: 0,
+    ticksPerFrame: Math.max(1, Math.round(60 / FPS)),
+    frameWidth: FRAME_W,
+    frameHeight: FRAME_H
+  };
 
-(function setupScale(){
-  const cssW = cvs.width * SCALE;
-  const cssH = cvs.height * SCALE;
-  const dpr = window.devicePixelRatio || 1;
-  cvs.style.width  = cssW + 'px';
-  cvs.style.height = cssH + 'px';
-  cvs.width  = cssW * dpr;
-  cvs.height = cssH * dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);   // draw in CSS pixels
-})();
+  function loop(){
+    requestAnimationFrame(loop);
 
-/* ------------------------------------------------------------------ */
-/* 3) SIMPLE ANIMATION STATE MACHINE                                   */
-/* ------------------------------------------------------------------ */
-let state = {
-  key: 'idle',
-  img: null,
-  frames: 1,
-  fw: 64, fh: 64,
-  speed: 8,      // bigger = slower
-  frame: 0,
-  tick: 0,
-  fallbackBurst: [] // sparkle/heart particles if we don’t have a sheet
-};
-
-function loadAnim(key){
-  const def = SPRITES[key];
-  state.key = key;
-  state.frames = def.frames;
-  state.fw = def.fw;
-  state.fh = def.fh;
-  state.speed = def.speed;
-  state.frame = 0;
-  state.tick = 0;
-  state.fallbackBurst.length = 0;
-
-  const img = new Image();
-  img.onload = () => { state.img = img; };
-  img.onerror = () => { state.img = null; }; // trigger fallback particles
-  img.src = def.src;
-}
-
-/* ------------------------------------------------------------------ */
-/* 4) DRAW LOOP                                                        */
-/* ------------------------------------------------------------------ */
-function loop(){
-  requestAnimationFrame(loop);
-
-  // clear
-  ctx.clearRect(0,0,cvs.width, cvs.height);
-
-  // center the sprite
-  const drawW = state.fw * SCALE;
-  const drawH = state.fh * SCALE;
-  const x = (cvs.width / (window.devicePixelRatio||1) - drawW)/2;
-  const y = (cvs.height/ (window.devicePixelRatio||1) - drawH)/2;
-
-  if (state.img){
-    // advance frame
+    // advance frames on a simple timer
     state.tick++;
-    if (state.tick >= state.speed){
+    if (state.tick >= state.ticksPerFrame){
       state.tick = 0;
-      state.frame = (state.frame + 1) % state.frames;
+      state.frame = (state.frame + 1) % state.totalFrames;
     }
-    // source slice
-    const sx = state.frame * state.fw;
-    ctx.drawImage(state.img, sx, 0, state.fw, state.fh, x, y, drawW, drawH);
-  } else {
-    // Fallback: bounce the idle once + little particles
-    drawFallbackIdle(x,y,drawW,drawH);
+
+    // clear and draw current frame, scaled
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // center the cat on canvas
+    const drawW = state.frameWidth * SCALE;
+    const drawH = state.frameHeight * SCALE;
+    const dx = (canvas.width - drawW) / 2;
+    const dy = (canvas.height - drawH) / 2;
+
+    const sx = state.frame * state.frameWidth;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(state.img, sx, 0, state.frameWidth, state.frameHeight, dx, dy, drawW, drawH);
   }
 
-  // particles (for “healed” / “drunk” effect)
-  updateParticles();
-  drawParticles();
-}
-requestAnimationFrame(loop);
-
-/* ------------------------------------------------------------------ */
-/* 5) BUTTON HANDLERS                                                  */
-/* ------------------------------------------------------------------ */
-function showIdle(){
-  loadAnim('idle');
-}
-
-function showKimchi(){
-  // try to use an eat animation; otherwise fallback with “heal” particles
-  if (imageExists(SPRITES.eat.src)){
-    loadAnim('eat');
-  } else {
-    loadAnim('idle');
-    spawnHealParticles();
+  function playSprite(src, totalFrames){
+    const img = new Image();
+    img.onload = () => {
+      state.img = img;
+      state.totalFrames = totalFrames;
+      state.frame = 0;
+      state.tick = 0;
+    };
+    img.src = src;
   }
-}
 
-function showVodka(){
-  if (imageExists(SPRITES.vodka.src)){
-    loadAnim('vodka');
-  } else {
-    loadAnim('idle');
-    spawnDrunkParticles();
+  // ——— Buttons ———
+  function showKimchi(){
+    // when you export the eating animation sprite sheet, update the file name & frame count here
+    playSprite('Normalidle.png', state.totalFrames); // placeholder until you add kimchi sheet
   }
-}
-
-/* tiny helper: preflight check if file likely exists in repo path */
-function imageExists(path){
-  // We can’t fetch here due to GitHub CORS in some cases; instead,
-  // attempt to load. If it 404s, onerror will set img=null and
-  // our loop uses the fallback. This helper is only to decide which
-  // animation key to pass to loadAnim; we’ll just call loadAnim and
-  // let onerror handle the rest.
-  return true;
-}
-
-/* ------------------------------------------------------------------ */
-/* 6) Fallback drawing & particles                                     */
-/* ------------------------------------------------------------------ */
-function drawFallbackIdle(x,y,w,h){
-  // simple bob effect using a gray square (placeholder) if no image yet
-  // You’ll almost always have NormalIdle.png, so this path rarely runs.
-  ctx.fillStyle = '#ccc';
-  const bob = Math.sin(Date.now()/200)*2;
-  ctx.fillRect(x, y + bob, w, h);
-}
-
-function spawnHealParticles(){
-  // green + heart colors
-  const cx = cvs.width/(window.devicePixelRatio||1)/2;
-  const cy = cvs.height/(window.devicePixelRatio||1)/2 - 10;
-  for (let i=0;i<10;i++){
-    state.fallbackBurst.push({
-      x: cx + (Math.random()*20-10),
-      y: cy + (Math.random()*10-5),
-      vx: (Math.random()*0.6-0.3),
-      vy: - (1 + Math.random()*1.5),
-      life: 40,
-      color: i%2 ? '#e25590' : '#27ae60' // pink hearts & green heal
-    });
+  function showIdle(){
+    playSprite('Normalidle.png', state.totalFrames);
   }
-}
 
-function spawnDrunkParticles(){
-  // yellow “sparkles”
-  const cx = cvs.width/(window.devicePixelRatio||1)/2;
-  const cy = cvs.height/(window.devicePixelRatio||1)/2 - 10;
-  for (let i=0;i<12;i++){
-    state.fallbackBurst.push({
-      x: cx + (Math.random()*24-12),
-      y: cy + (Math.random()*12-6),
-      vx: (Math.random()*0.8-0.4),
-      vy: - (0.6 + Math.random()*1.2),
-      life: 36,
-      color: '#f1c40f'
-    });
-  }
-}
-
-function updateParticles(){
-  state.fallbackBurst.forEach(p=>{
-    p.x += p.vx;
-    p.y += p.vy;
-    p.vy += 0.04;   // gravity
-    p.life--;
+  // Start idle as soon as page loads
+  window.addEventListener('load', () => {
+    // IMPORTANT: Filename must exactly match what’s in your repo: "Normalidle.png"
+    playSprite('Normalidle.png', 4); // change 4 to however many frames Normalidle.png has
+    loop();
   });
-  state.fallbackBurst = state.fallbackBurst.filter(p=>p.life>0);
-}
-
-function drawParticles(){
-  state.fallbackBurst.forEach(p=>{
-    ctx.fillStyle = p.color;
-    ctx.fillRect(Math.round(p.x), Math.round(p.y), 3, 3);
-  });
-}
-
-/* ------------------------------------------------------------------ */
-/* 7) BOOT                                                             */
-/* ------------------------------------------------------------------ */
-loadAnim('idle'); // start with idle
 </script>
 </body>
 </html>
