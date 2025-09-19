@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Emily’s Cat</title>
+  <style>
+    /* center the canvas and keep pixels chunky */
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #f2f2f2;
+      display: grid;
+      place-items: center;
+      font-family: system-ui, sans-serif;
+    }
+    canvas {
+      image-rendering: pixelated;
+      background: white;
+      /* scale the tiny 64×64 canvas up without blurring */
+      width: 256px;   /* 64×4 */
+      height: 256px;  /* 64×4 */
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.08);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Internal resolution stays 64×64; we scale it with CSS above -->
+  <canvas id="gameCanvas" width="64" height="64"></canvas>
+
+  <script>
+    // --- canvas setup ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false; // keep pixels crisp
+
+    // A tiny helper so we can reuse the same code later for kimchi/vodka
+    const state = {
+      img: null,
+      frameWidth: 64,
+      frameHeight: 64,
+      totalFrames: 4,   // <— set this to how many frames your NormalIdle.png has
+      frame: 0,
+      speed: 8,         // bigger = slower; smaller = faster (try 6–10)
+      tick: 0
+    };
+
+    function playAnimation(src, totalFrames, speed, fw = 64, fh = 64) {
+      state.img = new Image();
+      state.totalFrames = totalFrames;
+      state.speed = speed;
+      state.frameWidth = fw;
+      state.frameHeight = fh;
+      state.frame = 0;
+      state.tick = 0;
+      state.img.onload = () => requestAnimationFrame(loop);
+      state.img.src = src;
+    }
+
+    function loop() {
+      // clear and draw current frame
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const sx = state.frame * state.frameWidth;  // source x on the sheet
+      ctx.drawImage(
+        state.img,
+        sx, 0, state.frameWidth, state.frameHeight, // crop from sheet
+        0, 0, canvas.width, canvas.height           // draw onto canvas
+      );
+
+      // advance animation
+      state.tick++;
+      if (state.tick >= state.speed) {
+        state.frame = (state.frame + 1) % state.totalFrames;
+        state.tick = 0;
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    // START: play the normal idle on repeat.
+    // IMPORTANT: filename must match exactly (case-sensitive on GitHub Pages)
+    // Change 4 to the number of frames you exported in NormalIdle.png
+    playAnimation('NormalIdle.png', 4, 8);
+  </script>
+</body>
+</html>
