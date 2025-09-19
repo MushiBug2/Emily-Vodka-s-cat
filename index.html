@@ -1,198 +1,195 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>Emily's Cat</title>
   <style>
+    /* page */
     html, body { height: 100%; margin: 0; }
     body{
-      background:#f2f2f2;
-      display:flex;
-      flex-direction:column;         /* canvas on top, buttons under */
-      align-items:center;
-      justify-content:center;
-      gap:16px;
+      background:#ffffff;              /* white bg */
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      gap: 28px;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
     }
 
-    /* Canvas area */
-    .stage{
-      width: 256px;                  /* display size (scaled) */
-      height:256px;
-      display:grid;
-      place-items:center;
-      background:#fff;
-      border:1px solid #ddd;
-    }
+    /* canvas */
     canvas{
-      width: 192px;                  /* scale the 128x128 canvas 1.5x */
-      height:192px;
-      image-rendering: pixelated;
+      width:256px; height:256px;       /* 256×256 on screen */
+      image-rendering: pixelated;      /* crisp */
       background:#fff;
+      border: 1px solid #ddd;
     }
 
-    /* Buttons row */
+    /* buttons row */
     .button-row{
-      display:flex;
-      gap:20px;
-      justify-content:center;
-      align-items:center;
+      display:flex; gap: 28px; justify-content:center; align-items:center;
     }
-    .icon-btn{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      padding: 10px 20px;
-      font-size:18px;
-      border:2px solid #333;
-      background:#f2f2f2;
-      border-radius:6px;
-      cursor:pointer;
-      user-select:none;
+    .button{
+      display:flex; align-items:center; gap:12px;
+      padding:14px 22px; font-size:20px; font-weight:600;
+      border:2px solid #333; border-radius:10px; background:#fff;
+      cursor:pointer; user-select:none;
+      transition: transform .05s ease, background .1s ease;
     }
-    .icon-btn:hover{ background:#ddd; }
-    .icon-btn img{
-      width:28px; height:28px;
-      image-rendering: pixelated;
-    }
-
-    /* tiny status text (errors/fallbacks) */
-    #status { color:#666; font-size:12px; min-height:1em; }
+    .button:hover{ background:#f2f2f2; }
+    .button:active{ transform: translateY(1px); }
+    .button img{ width:28px; height:28px; image-rendering: pixelated; }
   </style>
 </head>
 <body>
 
-  <!-- Canvas holder -->
-  <div class="stage">
-    <canvas id="game" width="128" height="128"></canvas>
-  </div>
+  <!-- Game View -->
+  <canvas id="game" width="256" height="256"></canvas>
 
-  <!-- Buttons -->
+  <!-- Controls -->
   <div class="button-row">
-    <button class="icon-btn" id="kimchiBtn">
-      <img src="Kimchi.png" alt="Kimchi">
+    <div id="btnKimchi" class="button">
+      <img src="Kimchi.png" alt="Kimchi" />
       Kimchi
-    </button>
-    <button class="icon-btn" id="vodkaBtn">
-      <img src="vodka.png" alt="Vodka">
+    </div>
+    <div id="btnVodka" class="button">
+      <img src="vodka.png" alt="Vodka" />
       Vodka
-    </button>
+    </div>
   </div>
-
-  <div id="status"></div>
 
   <script>
-    /* -------------------------------------------
-       FILE NAMES — change these if you export new sheets
-       (put the PNGs in this same repo folder)
-    -------------------------------------------- */
-    const SHEETS = {
-      idle:  'NormalIdle.png',      // your idle sheet (already uploaded)
-      kimchi:'NormalKimchi.png',    // export later; we’ll fall back to idle if missing
-      vodka: 'NormalVodka.png'      // export later; we’ll fall back to idle if missing
-    };
+    // ====== constants ======
+    const FRAME_W = 64;        // size of each frame in your sheets
+    const FRAME_H = 64;
+    const FPS = 8;             // animation speed
+    const SCALE = 4;           // 64px * 4 = 256px canvas
 
-    /* -------------------------------------------
-       SPRITE SETTINGS
-       - FRAME_W/H should match what you exported from Aseprite
-       - FPS is animation speed
-       - We auto-detect total frames from the sheet width (1 row)
-    -------------------------------------------- */
-    const FRAME_W = 64;   // width of a single frame in your sheet
-    const FRAME_H = 64;   // height of a single frame in your sheet
-    const FPS      = 6;   // 6–10 is a nice range for 8-bit vibes
-
+    // ====== canvas setup ======
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
 
-    const state = {
-      img: null,
-      frame: 0,
-      totalFrames: 1,
-      acc: 0,
-      msPerFrame: 1000 / FPS,
-      playing: false,
-      playOnce: false,
-      onDone: null
+    // center position to draw the 64×64 sprite on a 256×256 canvas
+    const drawX = (canvas.width  - FRAME_W * SCALE) / 2;
+    const drawY = (canvas.height - FRAME_H * SCALE) / 2;
+
+    // ====== state machine ======
+    // files must match your repo EXACTLY (case sensitive)
+    const sheets = {
+      idle: {
+        normal: 'Normalidle.png',
+        sick:   'sickidle2.png',
+      },
+      kimchi: {
+        normal: 'normalkimchinormal.png',   // normal → eat kimchi → stay normal
+        sick:   'sickkimchinormal.png',     // sick → eat kimchi → heal to normal
+      },
+      vodka: {
+        normal: 'normalvodkasick.png',      // normal → drink → become sick
+        sick:   'sickvodkasick.png',        // sick → drink → stay sick
+      },
     };
 
-    function setStatus(msg){
-      document.getElementById('status').textContent = msg || '';
-    }
+    let mood = 'normal'; // 'normal' | 'sick'
+    let playing = null;  // current animation controller (for cancel)
 
-    function loadSheet(src, {playOnce=false, onDone=null} = {}){
+    // generic sprite-sheet player (single row, any frame count)
+    function playSheet(src, { loop=false, onComplete=null } = {}){
+      // stop previous animation if any
+      if (playing && playing.stop) playing.stop();
+
       const img = new Image();
+      const state = {
+        frame: 0,
+        total: 1,
+        tick: 0,
+        stopped: false
+      };
+
       img.onload = () => {
-        state.img = img;
-        // Assume 1 horizontal row
-        state.totalFrames = Math.max(1, Math.floor(img.width / FRAME_W));
-        state.frame = 0;
-        state.acc = 0;
-        state.playOnce = playOnce;
-        state.onDone = onDone || null;
-        state.playing = true;
-        setStatus('');
-        requestAnimationFrame(loop);
-      };
-      img.onerror = () => {
-        // If the requested sheet isn't found, fall back to idle
-        if (src !== SHEETS.idle){
-          setStatus('Couldn\'t load "' + src + '" — showing idle instead.');
-          loadSheet(SHEETS.idle);
-        } else {
-          setStatus('Couldn\'t load "' + src + '". Check the filename & commit.');
-        }
-      };
-      img.src = src;
-    }
+        // auto-detect frame count from image width
+        state.total = Math.max(1, Math.floor(img.width / FRAME_W));
 
-    function loop(ts){
-      if (!state.playing || !state.img) return;
+        const step = () => {
+          if (state.stopped) return;
 
-      // Advance timing
-      if (!state.last) state.last = ts;
-      const dt = ts - state.last;
-      state.last = ts;
-      state.acc += dt;
+          // draw current frame
+          const sx = state.frame * FRAME_W;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(
+            img,
+            sx, 0, FRAME_W, FRAME_H,      // crop
+            drawX, drawY, FRAME_W*SCALE, FRAME_H*SCALE // draw scaled & centered
+          );
 
-      while (state.acc >= state.msPerFrame){
-        state.acc -= state.msPerFrame;
-        state.frame++;
-        if (state.frame >= state.totalFrames){
-          if (state.playOnce){
-            state.playing = false;
-            if (typeof state.onDone === 'function') state.onDone();
-            // Return to idle after a one-shot anim
-            loadSheet(SHEETS.idle);
-            return;
-          } else {
-            state.frame = 0; // loop
+          // advance at FPS
+          state.tick++;
+          if (state.tick >= Math.max(1, Math.round(60 / FPS))) {
+            state.tick = 0;
+            state.frame++;
+            if (state.frame >= state.total) {
+              if (loop) {
+                state.frame = 0;
+              } else {
+                // finish once, then callback
+                if (onComplete) onComplete();
+                return; // stop requesting new frames
+              }
+            }
           }
-        }
-      }
+          state.raf = requestAnimationFrame(step);
+        };
 
-      // Clear & draw current frame
-      ctx.clearRect(0,0,canvas.width, canvas.height);
-      const sx = state.frame * FRAME_W;
-      ctx.drawImage(state.img, sx, 0, FRAME_W, FRAME_H,
-                    Math.floor((canvas.width - FRAME_W)/2),
-                    Math.floor((canvas.height - FRAME_H)/2),
-                    FRAME_W, FRAME_H);
-      requestAnimationFrame(loop);
+        step();
+      };
+
+      img.src = src;
+
+      // allow external stop
+      playing = {
+        stop(){
+          state.stopped = true;
+          if (state.raf) cancelAnimationFrame(state.raf);
+        }
+      };
     }
 
-    // Button handlers
-    document.getElementById('kimchiBtn').addEventListener('click', () => {
-      // play once, then return to idle
-      loadSheet(SHEETS.kimchi, { playOnce:true });
-    });
-    document.getElementById('vodkaBtn').addEventListener('click', () => {
-      // play once, then return to idle
-      loadSheet(SHEETS.vodka, { playOnce:true });
-    });
+    // helpers to switch to idle based on mood
+    function playIdle(){
+      playSheet(sheets.idle[mood], { loop:true });
+    }
 
-    // Start with idle
-    loadSheet(SHEETS.idle);
+    // button actions
+    function doKimchi(){
+      // choose sheet by current mood
+      const src = sheets.kimchi[mood];
+      playSheet(src, {
+        loop:false,
+        onComplete(){
+          // kimchi always ends in normal mood
+          mood = 'normal';
+          playIdle();
+        }
+      });
+    }
+
+    function doVodka(){
+      const src = sheets.vodka[mood];
+      playSheet(src, {
+        loop:false,
+        onComplete(){
+          // vodka ends in sick mood
+          mood = 'sick';
+          playIdle();
+        }
+      });
+    }
+
+    // attach buttons
+    document.getElementById('btnKimchi').addEventListener('click', doKimchi);
+    document.getElementById('btnVodka').addEventListener('click', doVodka);
+
+    // boot: default normal idle looping
+    playIdle();
   </script>
 </body>
 </html>
+  
